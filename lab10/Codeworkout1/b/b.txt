@@ -1,0 +1,78 @@
+In the producer-consumer problem, the `full` and `empty` semaphores play crucial roles in synchronizing access to the shared buffer and ensuring thread safety. Here's a detailed explanation of their functionality:
+
+1. **`empty` Semaphore**
+   - **Purpose**: Tracks the number of available empty slots in the buffer
+   - **Initialization**: `sem_init(&empty, 0, BUFFER_SIZE)`
+     - Initialized to the buffer's full capacity (5 in this case)
+   - **Operation**:
+     - **Producer**: 
+       - Calls `sem_wait(&empty)` before producing
+       - Decrements the `empty` count (blocks if buffer is full)
+       - Signals `sem_post(&empty)` isn't done by producer - this is actually done by the consumer
+     - **Consumer**:
+       - Calls `sem_post(&empty)` after consuming
+       - Increments the `empty` count (indicating a new free slot)
+
+   - **Key Functionality**:
+     - Prevents buffer overflow by blocking producers when buffer is full
+     - Ensures producers only produce when space is available
+ 2. **`full` Semaphore**
+   - **Purpose**: Tracks the number of occupied slots in the buffer
+   - **Initialization**: `sem_init(&full, 0, 0)`
+     - Starts at 0 (empty buffer)
+   - **Operation**:
+     - **Producer**:
+       - Calls `sem_post(&full)` after producing
+       - Increments the `full` count
+     - **Consumer**:
+       - Calls `sem_wait(&full)` before consuming
+       - Decrements the `full` count (blocks if buffer is empty)
+
+   - **Key Functionality**:
+     - Prevents underflow by blocking consumers when buffer is empty
+     - Ensures consumers only consume when items are available
+3. **Working Together**
+   - **Initial State**:
+     - `empty = 5` (all slots available)
+     - `full = 0` (no items to consume)
+   
+   - **Producer Workflow**:
+     1. Wait for empty slot (`sem_wait(&empty)`)
+     2. Acquire mutex (enter critical section)
+     3. Insert item into buffer
+     4. Release mutex (exit critical section)
+     5. Signal new item available (`sem_post(&full)`)
+
+   - **Consumer Workflow**:
+     1. Wait for available item (`sem_wait(&full)`)
+     2. Acquire mutex (enter critical section)
+     3. Remove item from buffer
+     4. Release mutex (exit critical section)
+     5. Signal new empty slot (`sem_post(&empty)`)
+4. **Visualization**
+   ```
+   Buffer: [ _, _, _, _, _ ]  // Initially
+   empty = 5, full = 0
+
+   Producer adds item 42:
+   [ 42, _, _, _, _ ]
+   empty = 4, full = 1
+
+   Consumer removes 42:
+   [ _, _, _, _, _ ]
+   empty = 5, full = 0
+   ```
+5. **Why Both Are Needed**
+   - Without `empty`: Producers might overwrite unread data
+   - Without `full`: Consumers might read garbage/empty slots
+   - Together they maintain:
+     - Bounded buffer integrity
+     - Thread safety
+     - Proper sequencing (produce before consume)
+6. **Difference from `mutex`**
+   - The `mutex` semaphore (initialized to 1) only provides mutual exclusion for buffer access
+   - `full`/`empty` manage the buffer's state and capacity:
+     - `mutex` protects against concurrent access
+     - `full`/`empty` protect against logical errors (overflow/underflow)
+
+This synchronization pattern is classic solution to the bounded buffer problem, ensuring producers and consumers operate safely at different speeds.

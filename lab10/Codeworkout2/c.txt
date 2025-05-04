@@ -1,0 +1,112 @@
+
+i) `reader()` Function Dry Run:
+
+1. **Initialization**:
+   - Receives thread ID as argument `(long)arg`
+   - Enters infinite loop (`while (1)`)
+
+2. **Entry Protocol**:
+   ```c
+   sem_wait(&mutex);       // Lock reader count mutex
+   readers_count++;        // Increment active reader count
+   if (readers_count == 1) // First reader?
+       sem_wait(&rw_mutex); // Lock writers out
+   sem_post(&mutex);       // Release reader count mutex
+   ```
+
+3. **Reading Operation**:
+   ```c
+   fseek(file, 0, SEEK_SET); // Rewind to file start
+   char buffer[256];
+   while (fgets(buffer, sizeof(buffer), file) != NULL) {
+       fprintf(stdout, "Reader %ld: %s", (long)arg, buffer);
+   }
+   ```
+
+4. **Exit Protocol**:
+   ```c
+   sem_wait(&mutex);       // Lock reader count mutex
+   readers_count--;        // Decrement active reader count
+   if (readers_count == 0) // Last reader?
+       sem_post(&rw_mutex); // Release writer lock
+   sem_post(&mutex);       // Release reader count mutex
+   ```
+
+5. **Delay**:
+   ```c
+   usleep(1000); // Short delay (1ms)
+   ```
+
+ii) `writer()` Function Dry Run:
+
+1. **Initialization**:
+   - Receives thread ID as argument `(long)arg`
+   - Enters infinite loop (`while (1)`)
+
+2. **Entry Protocol**:
+   ```c
+   sem_wait(&rw_mutex); // Acquire exclusive write lock
+   ```
+
+3. **Writing Operation**:
+   ```c
+   srand(time(NULL)); // Seed RNG
+   char randomString[STRING_LENGTH + 1];
+   for (int i = 0; i < STRING_LENGTH; i++) {
+       randomString[i] = 'a' + rand() % 26;
+   }
+   randomString[STRING_LENGTH] = '\0';
+   
+   fseek(file, 0, SEEK_END);
+   fprintf(file, "%s\n", randomString); // Write to file
+   fprintf(stdout, "Writer %ld: %s\n", (long)arg, randomString);
+   fflush(file); // Ensure write to disk
+   ```
+
+4. **Exit Protocol**:
+   ```c
+   sem_post(&rw_mutex); // Release write lock
+   ```
+
+5. **Delay**:
+   ```c
+   usleep(1000000 + rand() % 2000000); // Sleep 1-3 seconds
+   ```
+
+### Synchronization Flow Example:
+
+1. **Scenario**: 2 Readers (R1, R2) and 1 Writer (W1) active
+   - R1 arrives first:
+     - Locks `mutex`, sets `readers_count=1`
+     - Locks `rw_mutex` (first reader)
+     - Releases `mutex`
+     - Reads file contents
+
+   - R2 arrives while R1 is reading:
+     - Locks `mutex`, sets `readers_count=2`
+     - Skips `rw_mutex` wait (not first reader)
+     - Releases `mutex`
+     - Reads concurrently with R1
+
+   - W1 tries to write:
+     - Blocks on `sem_wait(&rw_mutex)` (held by readers)
+
+   - R1 finishes:
+     - Locks `mutex`, decrements `readers_count=1`
+     - Skips `rw_mutex` release (not last reader)
+     - Releases `mutex`
+
+   - R2 finishes:
+     - Locks `mutex`, decrements `readers_count=0`
+     - Releases `rw_mutex` (last reader)
+     - Releases `mutex`
+
+   - W1 now unblocks:
+     - Acquires `rw_mutex`
+     - Writes to file exclusively
+     - Releases `rw_mutex` when done
+
+This implementation ensures:
+- Readers can concurrent access when no writer is active
+- Writers get exclusive access
+- No starvation (writers will eventually get access)
